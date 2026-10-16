@@ -1,0 +1,129 @@
+POST http://localhost:8080/api/users
+Content-Type: application/json
+
+{
+  "name": "Max",
+  "email": "max33@example.com"
+}
+
+
+###
+POST http://localhost:8080/api/collectible-items
+Content-Type: application/json
+
+{
+  "description": "Феррари чемпионы Формулы 1",
+  "ownerId": 1,
+  "condition": "EXCELLENT"
+}
+
+
+###
+POST http://localhost:8080/api/auction-lots
+Content-Type: application/json
+
+{
+  "itemId": 3,
+  "startPrice": 10000,
+  "step": 500,
+  "startTime": "2026-10-16T20:00:00Z",
+  "endTime": "2026-10-20T20:00:00Z",
+  "status": "OPEN"
+}
+
+
+###
+POST http://localhost:8080/api/users
+Content-Type: application/json
+
+{
+  "name": "Alex",
+  "email": "alex23@example.com"
+}
+
+
+###
+POST http://localhost:8080/api/bids
+Content-Type: application/json
+
+{
+  "lotId": 8,
+  "userId": 10,
+  "amount": 10500
+}
+
+
+###
+PATCH http://localhost:8080/api/auction-lots/8
+Content-Type: application/json
+
+{
+  "status": "CLOSED"
+}
+
+
+###
+POST http://localhost:8080/api/auction-deals
+Content-Type: application/json
+
+{
+  "lotId": 8,
+  "winningBidId": 11,
+  "amount": 10500,
+  "transferStatus": "PENDING"
+}
+
+
+### Получить всех пользователей
+GET http://localhost:8080/api/users
+
+### Получить пользователя Max
+GET http://localhost:8080/api/users/1
+
+### Получить все коллекционные предметы
+GET http://localhost:8080/api/collectible-items
+
+### Получить предмет Ferrari
+GET http://localhost:8080/api/collectible-items/3
+
+### Получить все аукционные лоты
+GET http://localhost:8080/api/auction-lots
+
+### Получить все ставки
+GET http://localhost:8080/api/bids
+
+### Получить все сделки
+GET http://localhost:8080/api/auction-deals
+
+### Удалить пользователя Alex
+DELETE http://localhost:8080/api/users/10
+
+
+PUT http://localhost:8080/api/users/1
+Content-Type: application/json
+
+{
+  "name": "Charles Leclerc",
+  "email": "charles.leclerc@f1-example.com"
+}
+
+### Создать Макса Ферстаппена
+POST http://localhost:8080/api/users
+Content-Type: application/json
+
+{
+  "name": "Max Verstappen",
+  "email": "max.verstappen@f1-example.com"
+}
+
+### Обновить пользователя на Шарля Леклера
+PUT http://localhost:8080/api/users/1
+Content-Type: application/json
+
+{
+  "name": "Charles Leclerc",
+  "email": "charles.leclerc@f1-example.com"
+}
+
+### Получить всех пользователей
+GET http://localhost:8080/api/users
