@@ -1,0 +1,146 @@
+@baseUrl = http://localhost:8080
+
+### 01. Максимка — имя и email
+PATCH {{baseUrl}}/api/users/1
+Content-Type: application/json
+
+{"name":"Максимка — продавец","email":"ver33@example.com"}
+
+> {%
+    client.test("01. Максимка — имя и email", function() { client.assert(response.status === 200, "Ожидался 200, получен " + response.status + ": " + JSON.stringify(response.body)); });
+%}
+
+### 02. Льюис — имя и email
+PATCH {{baseUrl}}/api/users/2
+Content-Type: application/json
+
+{"name":"Льюис — участник","email":"ham44@example.com"}
+
+> {%
+    client.test("02. Льюис — имя и email", function() { client.assert(response.status === 200, "Ожидался 200, получен " + response.status + ": " + JSON.stringify(response.body)); });
+%}
+
+### 03. Шарль — имя и email
+PATCH {{baseUrl}}/api/users/3
+Content-Type: application/json
+
+{"name":"Шарль — участник","email":"lec16@example.com"}
+
+> {%
+    client.test("03. Шарль — имя и email", function() { client.assert(response.status === 200, "Ожидался 200, получен " + response.status + ": " + JSON.stringify(response.body)); });
+%}
+
+### 04. Создать продавца для нового аукциона
+< {%
+    const run = Date.now() + "-" + Math.floor(Math.random()*1000000);
+    client.global.set("auctionRun",run);
+    for(const key of ["seller","buyer","item","lot","deal","endTime"]) client.global.set(key, "");
+    request.variables.set("email", "ver33-" + run + "@example.com");
+%}
+POST {{baseUrl}}/api/users
+Content-Type: application/json
+
+{"name":"Максимка — продавец","email":"{{email}}"}
+
+> {%
+    client.test("04. Создать продавца для нового аукциона", function() { client.assert(response.status === 201, "Ожидался 201, получен " + response.status + ": " + JSON.stringify(response.body)); });
+    if(response.status === 201) client.global.set("seller", String(response.body.id));
+%}
+
+### 05. Создать участника для нового аукциона
+< {%
+    request.variables.set("email", "ham44-" + client.global.get("auctionRun") + "@example.com");
+%}
+POST {{baseUrl}}/api/users
+Content-Type: application/json
+
+{"name":"Льюис — участник","email":"{{email}}"}
+
+> {%
+    client.test("05. Создать участника для нового аукциона", function() { client.assert(response.status === 201, "Ожидался 201, получен " + response.status + ": " + JSON.stringify(response.body)); });
+    if(response.status === 201) client.global.set("buyer", String(response.body.id));
+%}
+
+### 06. Создать шлем
+POST {{baseUrl}}/api/collectible-items
+Content-Type: application/json
+
+{"description":"Шлем","ownerId":{{seller}},"condition":"GOOD"}
+
+> {%
+    client.test("06. Создать шлем", function() { client.assert(response.status === 201, "Ожидался 201, получен " + response.status + ": " + JSON.stringify(response.body)); });
+    if(response.status === 201) client.global.set("item", String(response.body.id));
+%}
+
+### 07. Создать лот на 20 секунд
+< {%
+    request.variables.set("start",new Date(Date.now()-1000).toISOString());
+    const end = new Date(Date.now()+20000).toISOString();
+    request.variables.set("end",end);
+    client.global.set("endTime",end);
+%}
+POST {{baseUrl}}/api/auction-lots
+Content-Type: application/json
+
+{"itemId":{{item}},"startPrice":100,"step":10,"startTime":"{{start}}","endTime":"{{end}}"}
+
+> {%
+    client.test("07. Создать лот на 20 секунд", function() { client.assert(response.status === 201, "Ожидался 201, получен " + response.status + ": " + JSON.stringify(response.body)); });
+    if(response.status === 201) client.global.set("lot", String(response.body.id));
+%}
+
+### 08. Публикация лота
+POST {{baseUrl}}/api/auction-lots/{{lot}}/publish
+
+> {%
+    client.test("08. Публикация лота", function() { client.assert(response.status === 200, "Ожидался 200, получен " + response.status + ": " + JSON.stringify(response.body)); });
+%}
+
+### 09. Ставка участника
+POST {{baseUrl}}/api/auction-lots/{{lot}}/place-bid
+Content-Type: application/json
+
+{"userId":{{buyer}},"amount":100}
+
+> {%
+    client.test("09. Ставка участника", function() { client.assert(response.status === 201, "Ожидался 201, получен " + response.status + ": " + JSON.stringify(response.body)); });
+%}
+
+### 10. Отмена после ставки запрещена — это успешная проверка
+POST {{baseUrl}}/api/auction-lots/{{lot}}/cancel
+
+> {%
+    client.test("10. Отмена после ставки запрещена — это успешная проверка", function() { client.assert(response.status === 409, "Ожидался 409, получен " + response.status + ": " + JSON.stringify(response.body)); });
+%}
+
+### 11. Автоматически дождаться конца и закрыть лот
+< {%
+    const end = Date.parse(client.global.get("endTime"));
+    if(!Number.isFinite(end)) throw new Error("Запустите весь файл через Run All Requests с начала.");
+    const wait = Math.max(0,end-Date.now()+500);
+    client.log("Ожидание конца аукциона: " + Math.ceil(wait/1000) + " сек.");
+    await sleep(wait);
+%}
+POST {{baseUrl}}/api/auction-lots/{{lot}}/close
+
+> {%
+    client.test("11. Автоматически дождаться конца и закрыть лот", function() { client.assert(response.status === 200, "Ожидался 200, получен " + response.status + ": " + JSON.stringify(response.body)); });
+    if(response.status === 200 && response.body.deal) client.global.set("deal",String(response.body.deal.id));
+    client.test("Сделка создана",function() { client.assert(response.status === 200 && !!response.body.deal,"Сделка не создана: " + JSON.stringify(response.body)); });
+%}
+
+### 12. Завершить передачу
+POST {{baseUrl}}/api/auction-deals/{{deal}}/complete
+
+> {%
+    client.test("12. Завершить передачу", function() { client.assert(response.status === 200, "Ожидался 200, получен " + response.status + ": " + JSON.stringify(response.body)); });
+    client.test("Сделка завершена",function() { client.assert(response.body.deal && response.body.deal.transferStatus === "COMPLETED","Передача не завершена"); });
+%}
+
+### 13. Проверить нового владельца шлема
+GET {{baseUrl}}/api/collectible-items/{{item}}
+
+> {%
+    client.test("13. Проверить нового владельца шлема", function() { client.assert(response.status === 200, "Ожидался 200, получен " + response.status + ": " + JSON.stringify(response.body)); });
+    client.test("Шлем принадлежит победителю",function() { client.assert(String(response.body.ownerId) === client.global.get("buyer"),"Владелец не совпал с победителем"); });
+%}
