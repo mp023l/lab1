@@ -1,0 +1,758 @@
+# Запускать Run All Requests по порядку. Cookie jar должен быть включён.
+# Укажите пароль администратора, заданный при первом запуске.
+@baseUrl = http://localhost:8080
+@adminPassword = AdminDemo123!
+@password = AuctionUser123!
+
+### 01 Получить CSRF и cookie
+< {%
+ const run=Date.now().toString();
+ client.global.set('run',run);
+ ['seller','buyer','other'].forEach(x=>client.global.set(x+'Name',x+run));
+ client.global.set('start',new Date(Date.now()-60000).toISOString());
+ client.global.set('end',new Date(Date.now()+3600000).toISOString());
+ %}
+GET {{baseUrl}}/api/security/csrf
+
+> {%
+ client.test("01 Получить CSRF и cookie",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ client.global.set("csrf",response.body["token"]);
+ %}
+
+### Без входа — 401
+GET {{baseUrl}}/api/auction-lots
+
+> {%
+ client.test("Без входа — 401",function(){client.assert(response.status===401,'Expected 401, got '+response.status);});
+ %}
+
+### Регистрация seller
+POST {{baseUrl}}/api/security/register
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "username": "{{sellerName}}",
+  "name": "seller",
+  "email": "{{sellerName}}@example.com",
+  "password": "{{password}}",
+  "role": "ADMIN"
+}
+
+> {%
+ client.test("Регистрация seller",function(){client.assert(response.status===201,'Expected 201, got '+response.status);});
+ client.global.set("sellerId",response.body["id"]);
+ %}
+
+### Регистрация buyer
+POST {{baseUrl}}/api/security/register
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "username": "{{buyerName}}",
+  "name": "buyer",
+  "email": "{{buyerName}}@example.com",
+  "password": "{{password}}",
+  "role": "ADMIN"
+}
+
+> {%
+ client.test("Регистрация buyer",function(){client.assert(response.status===201,'Expected 201, got '+response.status);});
+ client.global.set("buyerId",response.body["id"]);
+ %}
+
+### Регистрация other
+POST {{baseUrl}}/api/security/register
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "username": "{{otherName}}",
+  "name": "other",
+  "email": "{{otherName}}@example.com",
+  "password": "{{password}}",
+  "role": "ADMIN"
+}
+
+> {%
+ client.test("Регистрация other",function(){client.assert(response.status===201,'Expected 201, got '+response.status);});
+ client.global.set("otherId",response.body["id"]);
+ %}
+
+### Повторный логин — 409
+POST {{baseUrl}}/api/security/register
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "username": "{{sellerName}}",
+  "name": "Duplicate",
+  "email": "{{run}}dup@example.com",
+  "password": "{{password}}"
+}
+
+> {%
+ client.test("Повторный логин — 409",function(){client.assert(response.status===409,'Expected 409, got '+response.status);});
+ %}
+
+### Повторный email — 409
+POST {{baseUrl}}/api/security/register
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "username": "dup{{run}}",
+  "name": "Duplicate",
+  "email": "{{sellerName}}@example.com",
+  "password": "{{password}}"
+}
+
+> {%
+ client.test("Повторный email — 409",function(){client.assert(response.status===409,'Expected 409, got '+response.status);});
+ %}
+
+### Слабый пароль — 400
+POST {{baseUrl}}/api/security/register
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "username": "weak{{run}}",
+  "name": "Weak",
+  "email": "weak{{run}}@example.com",
+  "password": "weak"
+}
+
+> {%
+ client.test("Слабый пароль — 400",function(){client.assert(response.status===400,'Expected 400, got '+response.status);});
+ %}
+
+### Проверить свою роль USER
+GET {{baseUrl}}/api/security/me
+Authorization: Basic {{sellerName}} {{password}}
+
+> {%
+ client.test("Проверить свою роль USER",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ client.test('Роль USER',()=>client.assert(response.body.role==='USER'));
+ %}
+
+### Список своих данных
+GET {{baseUrl}}/api/users
+Authorization: Basic {{sellerName}} {{password}}
+
+> {%
+ client.test("Список своих данных",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### Чужие персональные данные — 403
+GET {{baseUrl}}/api/users/{{buyerId}}
+Authorization: Basic {{sellerName}} {{password}}
+
+> {%
+ client.test("Чужие персональные данные — 403",function(){client.assert(response.status===403,'Expected 403, got '+response.status);});
+ %}
+
+### Обновить свой профиль
+PATCH {{baseUrl}}/api/users/{{sellerId}}
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "name": "Максимка"
+}
+
+> {%
+ client.test("Обновить свой профиль",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### Повысить свою роль — 403
+PATCH {{baseUrl}}/api/users/{{sellerId}}
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "role": "ADMIN"
+}
+
+> {%
+ client.test("Повысить свою роль — 403",function(){client.assert(response.status===403,'Expected 403, got '+response.status);});
+ %}
+
+### Нет CSRF — 403
+POST {{baseUrl}}/api/collectible-items
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+
+{
+  "description": "Шлем",
+  "condition": "NEW"
+}
+
+> {%
+ client.test("Нет CSRF — 403",function(){client.assert(response.status===403,'Expected 403, got '+response.status);});
+ %}
+
+### Неверный CSRF — 403
+POST {{baseUrl}}/api/collectible-items
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: invalid-token
+
+{
+  "description": "Шлем",
+  "condition": "NEW"
+}
+
+> {%
+ client.test("Неверный CSRF — 403",function(){client.assert(response.status===403,'Expected 403, got '+response.status);});
+ %}
+
+### Создать шлем
+POST {{baseUrl}}/api/collectible-items
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "description": "Шлем Ferrari",
+  "condition": "EXCELLENT"
+}
+
+> {%
+ client.test("Создать шлем",function(){client.assert(response.status===201,'Expected 201, got '+response.status);});
+ client.global.set("itemId",response.body["id"]);
+ %}
+
+### Чужой предмет — 403
+PATCH {{baseUrl}}/api/collectible-items/{{itemId}}
+Authorization: Basic {{buyerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "description": "Подмена"
+}
+
+> {%
+ client.test("Чужой предмет — 403",function(){client.assert(response.status===403,'Expected 403, got '+response.status);});
+ %}
+
+### PUT своего предмета
+PUT {{baseUrl}}/api/collectible-items/{{itemId}}
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "description": "Шлем Формулы-1",
+  "condition": "EXCELLENT"
+}
+
+> {%
+ client.test("PUT своего предмета",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### Создать лот
+POST {{baseUrl}}/api/auction-lots
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "itemId": "{{itemId}}",
+  "startPrice": 100,
+  "step": 10,
+  "startTime": "{{start}}",
+  "endTime": "{{end}}",
+  "status": "OPEN"
+}
+
+> {%
+ client.test("Создать лот",function(){client.assert(response.status===201,'Expected 201, got '+response.status);});
+ client.global.set("lotId",response.body["id"]);
+ %}
+
+### Чужой лот — 403
+PATCH {{baseUrl}}/api/auction-lots/{{lotId}}
+Authorization: Basic {{buyerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "status": "CLOSED"
+}
+
+> {%
+ client.test("Чужой лот — 403",function(){client.assert(response.status===403,'Expected 403, got '+response.status);});
+ %}
+
+### Владелец не делает ставку — 409
+POST {{baseUrl}}/api/bids
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "lotId": "{{lotId}}",
+  "amount": 100
+}
+
+> {%
+ client.test("Владелец не делает ставку — 409",function(){client.assert(response.status===409,'Expected 409, got '+response.status);});
+ %}
+
+### Подмена участника — 403
+POST {{baseUrl}}/api/bids
+Authorization: Basic {{buyerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "lotId": "{{lotId}}",
+  "userId": "{{otherId}}",
+  "amount": 100
+}
+
+> {%
+ client.test("Подмена участника — 403",function(){client.assert(response.status===403,'Expected 403, got '+response.status);});
+ %}
+
+### Слишком малая ставка — 409
+POST {{baseUrl}}/api/bids
+Authorization: Basic {{buyerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "lotId": "{{lotId}}",
+  "amount": 99
+}
+
+> {%
+ client.test("Слишком малая ставка — 409",function(){client.assert(response.status===409,'Expected 409, got '+response.status);});
+ %}
+
+### Ставка Льюиса
+POST {{baseUrl}}/api/bids
+Authorization: Basic {{buyerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "lotId": "{{lotId}}",
+  "amount": 100
+}
+
+> {%
+ client.test("Ставка Льюиса",function(){client.assert(response.status===201,'Expected 201, got '+response.status);});
+ client.global.set("bidId",response.body["id"]);
+ %}
+
+### Нарушен шаг ставки — 409
+POST {{baseUrl}}/api/bids
+Authorization: Basic {{otherName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "lotId": "{{lotId}}",
+  "amount": 105
+}
+
+> {%
+ client.test("Нарушен шаг ставки — 409",function(){client.assert(response.status===409,'Expected 409, got '+response.status);});
+ %}
+
+### Изменение ставки — 403
+PATCH {{baseUrl}}/api/bids/{{bidId}}
+Authorization: Basic {{buyerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "amount": 999
+}
+
+> {%
+ client.test("Изменение ставки — 403",function(){client.assert(response.status===403,'Expected 403, got '+response.status);});
+ %}
+
+### Изменение условий после ставки — 409
+PATCH {{baseUrl}}/api/auction-lots/{{lotId}}
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "step": 1
+}
+
+> {%
+ client.test("Изменение условий после ставки — 409",function(){client.assert(response.status===409,'Expected 409, got '+response.status);});
+ %}
+
+### Сделка до закрытия — 409
+POST {{baseUrl}}/api/auction-deals
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "lotId": "{{lotId}}",
+  "winningBidId": "{{bidId}}",
+  "amount": 100,
+  "transferStatus": "PENDING"
+}
+
+> {%
+ client.test("Сделка до закрытия — 409",function(){client.assert(response.status===409,'Expected 409, got '+response.status);});
+ %}
+
+### Продавец закрывает лот
+PATCH {{baseUrl}}/api/auction-lots/{{lotId}}
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "status": "CLOSED"
+}
+
+> {%
+ client.test("Продавец закрывает лот",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### Ставка в закрытый лот — 409
+POST {{baseUrl}}/api/bids
+Authorization: Basic {{buyerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "lotId": "{{lotId}}",
+  "amount": 110
+}
+
+> {%
+ client.test("Ставка в закрытый лот — 409",function(){client.assert(response.status===409,'Expected 409, got '+response.status);});
+ %}
+
+### Посторонний создаёт сделку — 403
+POST {{baseUrl}}/api/auction-deals
+Authorization: Basic {{otherName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "lotId": "{{lotId}}",
+  "winningBidId": "{{bidId}}",
+  "amount": 100,
+  "transferStatus": "PENDING"
+}
+
+> {%
+ client.test("Посторонний создаёт сделку — 403",function(){client.assert(response.status===403,'Expected 403, got '+response.status);});
+ %}
+
+### Создать сделку
+POST {{baseUrl}}/api/auction-deals
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "lotId": "{{lotId}}",
+  "winningBidId": "{{bidId}}",
+  "amount": 100,
+  "transferStatus": "PENDING"
+}
+
+> {%
+ client.test("Создать сделку",function(){client.assert(response.status===201,'Expected 201, got '+response.status);});
+ client.global.set("dealId",response.body["id"]);
+ %}
+
+### Чужая сделка — 403
+GET {{baseUrl}}/api/auction-deals/{{dealId}}
+Authorization: Basic {{otherName}} {{password}}
+
+> {%
+ client.test("Чужая сделка — 403",function(){client.assert(response.status===403,'Expected 403, got '+response.status);});
+ %}
+
+### Победитель видит сделку
+GET {{baseUrl}}/api/auction-deals/{{dealId}}
+Authorization: Basic {{buyerName}} {{password}}
+
+> {%
+ client.test("Победитель видит сделку",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### Завершить передачу
+PATCH {{baseUrl}}/api/auction-deals/{{dealId}}
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "transferStatus": "COMPLETED"
+}
+
+> {%
+ client.test("Завершить передачу",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### Проверить нового владельца
+GET {{baseUrl}}/api/collectible-items/{{itemId}}
+Authorization: Basic {{buyerName}} {{password}}
+
+> {%
+ client.test("Проверить нового владельца",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ client.test('Предмет передан',()=>client.assert(String(response.body.ownerId)===String(client.global.get('buyerId'))));
+ %}
+
+### Продавец видит завершённую сделку
+GET {{baseUrl}}/api/auction-deals/{{dealId}}
+Authorization: Basic {{sellerName}} {{password}}
+
+> {%
+ client.test("Продавец видит завершённую сделку",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### USER не меняет состояния — 403
+PATCH {{baseUrl}}/api/admin/accounts/{{buyerId}}/state
+Authorization: Basic {{sellerName}} {{password}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "state": "LOCKED"
+}
+
+> {%
+ client.test("USER не меняет состояния — 403",function(){client.assert(response.status===403,'Expected 403, got '+response.status);});
+ %}
+
+### ADMIN устанавливает LOCKED
+PATCH {{baseUrl}}/api/admin/accounts/{{buyerId}}/state
+Authorization: Basic admin {{adminPassword}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "state": "LOCKED"
+}
+
+> {%
+ client.test("ADMIN устанавливает LOCKED",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### LOCKED — вход запрещён 401
+GET {{baseUrl}}/api/security/me
+Authorization: Basic {{buyerName}} {{password}}
+
+> {%
+ client.test("LOCKED — вход запрещён 401",function(){client.assert(response.status===401,'Expected 401, got '+response.status);});
+ %}
+
+### ADMIN восстанавливает ACTIVE
+PATCH {{baseUrl}}/api/admin/accounts/{{buyerId}}/state
+Authorization: Basic admin {{adminPassword}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "state": "ACTIVE"
+}
+
+> {%
+ client.test("ADMIN восстанавливает ACTIVE",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### ADMIN устанавливает DISABLED
+PATCH {{baseUrl}}/api/admin/accounts/{{buyerId}}/state
+Authorization: Basic admin {{adminPassword}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "state": "DISABLED"
+}
+
+> {%
+ client.test("ADMIN устанавливает DISABLED",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### DISABLED — вход запрещён 401
+GET {{baseUrl}}/api/security/me
+Authorization: Basic {{buyerName}} {{password}}
+
+> {%
+ client.test("DISABLED — вход запрещён 401",function(){client.assert(response.status===401,'Expected 401, got '+response.status);});
+ %}
+
+### ADMIN восстанавливает ACTIVE
+PATCH {{baseUrl}}/api/admin/accounts/{{buyerId}}/state
+Authorization: Basic admin {{adminPassword}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "state": "ACTIVE"
+}
+
+> {%
+ client.test("ADMIN восстанавливает ACTIVE",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### ADMIN устанавливает EXPIRED
+PATCH {{baseUrl}}/api/admin/accounts/{{buyerId}}/state
+Authorization: Basic admin {{adminPassword}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "state": "EXPIRED"
+}
+
+> {%
+ client.test("ADMIN устанавливает EXPIRED",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### EXPIRED — вход запрещён 401
+GET {{baseUrl}}/api/security/me
+Authorization: Basic {{buyerName}} {{password}}
+
+> {%
+ client.test("EXPIRED — вход запрещён 401",function(){client.assert(response.status===401,'Expected 401, got '+response.status);});
+ %}
+
+### ADMIN восстанавливает ACTIVE
+PATCH {{baseUrl}}/api/admin/accounts/{{buyerId}}/state
+Authorization: Basic admin {{adminPassword}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "state": "ACTIVE"
+}
+
+> {%
+ client.test("ADMIN восстанавливает ACTIVE",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### ADMIN устанавливает PASSWORD_EXPIRED
+PATCH {{baseUrl}}/api/admin/accounts/{{buyerId}}/state
+Authorization: Basic admin {{adminPassword}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "state": "PASSWORD_EXPIRED"
+}
+
+> {%
+ client.test("ADMIN устанавливает PASSWORD_EXPIRED",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### PASSWORD_EXPIRED — вход запрещён 401
+GET {{baseUrl}}/api/security/me
+Authorization: Basic {{buyerName}} {{password}}
+
+> {%
+ client.test("PASSWORD_EXPIRED — вход запрещён 401",function(){client.assert(response.status===401,'Expected 401, got '+response.status);});
+ %}
+
+### ADMIN восстанавливает ACTIVE
+PATCH {{baseUrl}}/api/admin/accounts/{{buyerId}}/state
+Authorization: Basic admin {{adminPassword}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "state": "ACTIVE"
+}
+
+> {%
+ client.test("ADMIN восстанавливает ACTIVE",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### Вход восстановлен
+GET {{baseUrl}}/api/security/me
+Authorization: Basic {{buyerName}} {{password}}
+
+> {%
+ client.test("Вход восстановлен",function(){client.assert(response.status===200,'Expected 200, got '+response.status);});
+ %}
+
+### USER не удаляет предмет — 403
+DELETE {{baseUrl}}/api/collectible-items/{{itemId}}
+Authorization: Basic {{sellerName}} {{password}}
+X-CSRF-TOKEN: {{csrf}}
+
+> {%
+ client.test("USER не удаляет предмет — 403",function(){client.assert(response.status===403,'Expected 403, got '+response.status);});
+ %}
+
+### ADMIN удаляет предмет и связанные записи
+DELETE {{baseUrl}}/api/collectible-items/{{itemId}}
+Authorization: Basic admin {{adminPassword}}
+X-CSRF-TOKEN: {{csrf}}
+
+> {%
+ client.test("ADMIN удаляет предмет и связанные записи",function(){client.assert(response.status===204,'Expected 204, got '+response.status);});
+ %}
+
+### Удалённый предмет — 404
+GET {{baseUrl}}/api/collectible-items/{{itemId}}
+Authorization: Basic admin {{adminPassword}}
+
+> {%
+ client.test("Удалённый предмет — 404",function(){client.assert(response.status===404,'Expected 404, got '+response.status);});
+ %}
+
+### Неверный пароль — 401
+GET {{baseUrl}}/api/security/me
+Authorization: Basic {{sellerName}} wrong
+
+> {%
+ client.test("Неверный пароль — 401",function(){client.assert(response.status===401,'Expected 401, got '+response.status);});
+ %}
+
+### ADMIN создаёт пользователя через CRUD
+POST {{baseUrl}}/api/users
+Authorization: Basic admin {{adminPassword}}
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "username": "managed{{run}}",
+  "name": "Managed",
+  "email": "managed{{run}}@example.com",
+  "password": "{{password}}"
+}
+
+> {%
+ client.test("ADMIN создаёт пользователя через CRUD",function(){client.assert(response.status===201,'Expected 201, got '+response.status);});
+ client.global.set("managedId",response.body["id"]);
+ %}
+
+### ADMIN удаляет пользователя
+DELETE {{baseUrl}}/api/users/{{managedId}}
+Authorization: Basic admin {{adminPassword}}
+X-CSRF-TOKEN: {{csrf}}
+
+> {%
+ client.test("ADMIN удаляет пользователя",function(){client.assert(response.status===204,'Expected 204, got '+response.status);});
+ %}
+
+### Cookie без Basic не даёт вход — 401
+GET {{baseUrl}}/api/security/me
+
+> {%
+ client.test("Cookie без Basic не даёт вход — 401",function(){client.assert(response.status===401,'Expected 401, got '+response.status);});
+ %}
+
