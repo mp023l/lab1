@@ -1,0 +1,55 @@
+### Lab 5 - IntelliJ HTTP Client
+### Configure JWT_SECRET and AUCTION_ADMIN_PASSWORD before starting.
+### Username/password must satisfy lab4 registration rules.
+
+### 1. Register - 201, accessToken and refreshToken
+POST http://localhost:8080/auth/register
+Content-Type: application/json
+
+{"username":"student18","name":"Student","email":"student18@example.com","password":"StrongPassword18!"}
+
+### 2. Login - 200, accessToken and refreshToken
+POST http://localhost:8080/auth/login
+Content-Type: application/json
+
+{"username":"student18","password":"StrongPassword18!","deviceId":"intellij"}
+
+### 3. Protected endpoint: replace ACCESS_TOKEN with accessToken from login
+GET http://localhost:8080/api/security/me
+Authorization: Bearer ACCESS_TOKEN
+
+### 4. Refresh - 200, new pair. Replace REFRESH_TOKEN with refreshToken from login.
+POST http://localhost:8080/auth/refresh
+Content-Type: application/json
+
+{"refreshToken":"REFRESH_TOKEN","deviceId":"intellij"}
+
+### 5. Replay: send same old REFRESH_TOKEN again -> 401; old session becomes REVOKED
+POST http://localhost:8080/auth/refresh
+Content-Type: application/json
+
+{"refreshToken":"REFRESH_TOKEN"}
+
+### 6. Refresh used as access -> 401
+GET http://localhost:8080/api/security/me
+Authorization: Bearer REFRESH_TOKEN
+
+### 7. No credentials -> 401
+GET http://localhost:8080/api/security/me
+
+### 8. Malformed token -> 401
+GET http://localhost:8080/api/security/me
+Authorization: Bearer invalid.jwt.token
+
+### 9. Ordinary USER cannot call admin API -> 403
+PATCH http://localhost:8080/api/admin/accounts/1/state
+Authorization: Bearer ACCESS_TOKEN
+Content-Type: application/json
+
+{"state":"LOCKED"}
+
+### 10. Invalid login -> 401
+POST http://localhost:8080/auth/login
+Content-Type: application/json
+
+{"username":"student18","password":"wrong"}
